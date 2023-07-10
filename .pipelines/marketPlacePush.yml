@@ -1,0 +1,96 @@
+# This is an example pipeline if we need a pipeline to update the task onto the market place
+# If we use manual update, this will not be needed.
+
+trigger: 
+- main
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  PublisherID: 
+  ExtensionID: 
+  ExtensionName: 
+  ExtensionVersion: 
+  ArtifactStagingDirectory: './artifact'
+  ArtifactName: 'extension_artifact'
+
+
+
+stages:
+  - stage: Package_extension_and_publish_build_artifacts
+    jobs:
+      - job:
+        steps:
+          - task: TfxInstaller@3
+            inputs:
+              version: "v0.7.x"
+          - task: Npm@1
+            inputs:
+              command: 'install'
+              workingDir: './buildandreleasetask' # Update to the name of the directory of your task
+          - task: Bash@3
+            displayName: Compile Javascript
+            inputs:
+              targetType: "inline"
+              script: |
+                cd buildandreleasetask # Update to the name of the directory of your task
+                tsc
+          - task: QueryAzureDevOpsExtensionVersion@3
+            inputs:
+              connectTo: 'VsTeam'
+              connectedServiceName: 'release-test-connection' # Change to whatever you named the service connection
+              publisherId: '$(PublisherID)'
+              extensionId: '$(ExtensionID)'
+              versionAction: 'Patch'
+              outputVariable: 'Task.Extension.Version'
+          - task: PackageAzureDevOpsExtension@3
+            inputs:
+              rootFolder: '$(System.DefaultWorkingDirectory)'
+              publisherId: '$(PublisherID)'
+              extensionId: '$(ExtensionID)'
+              extensionName: '$(ExtensionName)'
+              extensionVersion: '$(ExtensionVersion)'
+              updateTasksVersion: true
+              updateTasksVersionType: 'patch'
+              extensionVisibility: 'private' # Change to public if you're publishing to the marketplace
+              extensionPricing: 'free'
+          - task: CopyFiles@2
+            displayName: "Copy Files to: $(ArtifactStagingDirectory)"
+            inputs:
+              Contents: "**/*.vsix"
+              TargetFolder: "$(ArtifactStagingDirectory)"
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: '$(ArtifactStagingDirectory)'
+              ArtifactName: '$(ArtifactName)'
+              publishLocation: 'Container'
+  - stage: Download_build_artifacts_and_publish_the_extension
+    jobs:
+      - job:
+        steps:
+          - task: TfxInstaller@3
+            inputs:
+              version: "v0.7.x"
+          - task: DownloadBuildArtifacts@0
+            inputs:
+              buildType: "current"
+              downloadType: "single"
+              artifactName: "$(ArtifactName)"
+              downloadPath: "$(System.DefaultWorkingDirectory)"
+          - task: PublishAzureDevOpsExtension@3
+            inputs:
+              connectTo: 'VsTeam'
+              connectedServiceName: 'release-test-connection' # Change to whatever you named the service connection
+              fileType: 'vsix'
+              vsixFile: '$(PublisherID).$(ExtensionName)/$(PublisherID)..vsix'
+              publisherId: '$(PublisherID)'
+              extensionId: '$(ExtensionID)'
+              extensionName: '$(ExtensionName)'
+              updateTasksVersion: false
+              extensionVisibility: 'private' # Change to public if you're publishing to the marketplace
+              extensionPricing: 'free'
+
+
+
+              
